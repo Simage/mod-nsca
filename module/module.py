@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (C) 2009-2012:
-#    Gabes Jean, naparuba@gmail.com
-#    Gerhard Lausser, Gerhard.Lausser@consol.de
-#    Gregory Starck, g.starck@gmail.com
-#    Hartmut Goebel, h.goebel@goebel-consult.de
-#    Frédéric Mohier, frederic.mohier@gmail.com
-#    David Durieux, d.durieux@siprossii.com
+# Gabes Jean, naparuba@gmail.com
+# Gerhard Lausser, Gerhard.Lausser@consol.de
+# Gregory Starck, g.starck@gmail.com
+# Hartmut Goebel, h.goebel@goebel-consult.de
+# Frédéric Mohier, frederic.mohier@gmail.com
+# David Durieux, d.durieux@siprossii.com
 #
 # This file is part of Shinken.
 #
@@ -33,25 +33,25 @@ import select
 import socket
 import struct
 import random
-
 import binascii
 
 from shinken.basemodule import BaseModule
 from shinken.external_command import ExternalCommand
 from shinken.log import logger
 
+
 properties = {
     'daemons': ['arbiter', 'receiver'],
     'type': 'nsca_server',
     'external': True,
     'phases': ['running'],
-    }
+}
 
 
 def decrypt_xor(data, key):
     keylen = len(key)
     crypted = [chr(ord(data[i]) ^ ord(key[i % keylen]))
-            for i in xrange(len(data))]
+               for i in xrange(len(data))]
     return ''.join(crypted)
 
 
@@ -62,7 +62,7 @@ def get_instance(plugin):
     host = getattr(plugin, 'host', '127.0.0.1')
     if host == '*':
         host = ''
-    
+
     port = int(getattr(plugin, 'port', '5667'))
     buffer_length = int(getattr(plugin, 'buffer_length', '4096'))
     payload_length = int(getattr(plugin, 'payload_length', '-1'))
@@ -76,20 +76,20 @@ def get_instance(plugin):
         logger.warning("[NSCA] Setting password to dummy to avoid crash!")
         password = "dummy"
 
-    host_prefix = getattr(plugin,'host_prefix',None)
+    host_prefix = getattr(plugin, 'host_prefix', None)
     max_packet_age = min(int(getattr(plugin, 'max_packet_age', '30')), 900)
     check_future_packet = bool(getattr(plugin, 'check_future_packet', 'False'))
 
-    instance = NSCA_arbiter(plugin, host, port,
-            buffer_length, payload_length, encryption_method, password, max_packet_age, check_future_packet,
-            backlog, host_prefix=host_prefix)
+    instance = NSCAArbiter(plugin, host, port, buffer_length, payload_length, encryption_method, password,
+                           max_packet_age, check_future_packet, backlog, host_prefix=host_prefix)
     return instance
 
 
-class NSCA_arbiter(BaseModule):
+class NSCAArbiter(BaseModule):
     """Please Add a Docstring to describe the class here"""
 
-    def __init__(self, modconf, host, port, buffer_length, payload_length, encryption_method, password, max_packet_age, check_future_packet, backlog,host_prefix=None):
+    def __init__(self, modconf, host, port, buffer_length, payload_length, encryption_method, password, max_packet_age,
+                 check_future_packet, backlog, host_prefix=None):
         BaseModule.__init__(self, modconf)
         self.host = host
         self.port = port
@@ -102,21 +102,24 @@ class NSCA_arbiter(BaseModule):
         self.max_packet_age = max_packet_age
         self.check_future_packet = check_future_packet
         self.host_prefix = host_prefix
-        logger.info("[NSCA] configuration, allowed hosts : '%s'(%s), buffer length: %s, payload length: %s, encryption: %s, max packet age: %s, check future packet: %s, backlog: %d", self.host, self.port, self.buffer_length, self.payload_length, self.encryption_method, self.max_packet_age, self.check_future_packet, self.backlog)
+        msg = "[NSCA] configuration, allowed hosts : '%s'(%s), buffer length: %s, payload length: %s, encryption: %s,"
+        msg += " max packet age: %s, check future packet: %s, backlog: %d",
+        logger.info(msg, self.host, self.port, self.buffer_length, self.payload_length, self.encryption_method,
+                    self.max_packet_age, self.check_future_packet, self.backlog)
 
     def send_init_packet(self, sock):
-        '''
+        """
         Build an init packet
          00-127: IV
          128-131: unix timestamp
-        '''
-        iv = ''.join([chr(self.rng.randrange(256)) for i in xrange(128)])
-        init_packet = struct.pack("!128sI", iv, int(time.time()))
+        """
+        initial_vector = ''.join([chr(self.rng.randrange(256)) for i in xrange(128)])
+        init_packet = struct.pack("!128sI", initial_vector, int(time.time()))
         sock.send(init_packet)
-        return iv
+        return initial_vector
 
     def read_check_result(self, data, iv, payload_length):
-        '''
+        """
         Read the check result
 
         The !hhIIh64s128s512sh is the description of the packet.
@@ -156,7 +159,7 @@ class NSCA_arbiter(BaseModule):
             char      iv[TRANSMITTED_IV_SIZE];
             u_int32_t timestamp;
         }init_packet;
-        '''
+        """
 
         if self.encryption_method == 1:
             data = decrypt_xor(data, self.password)
@@ -166,54 +169,55 @@ class NSCA_arbiter(BaseModule):
         try:
             # Python pack format for NSCA C structure
             # Depending on requested payload length
-            unpackFormat = "!hhIIh64s128s%ssh" % payload_length
+            unpack_format = "!hhIIh64s128s%ssh" % payload_length
 
             # version, pad1, crc32, timestamp, rc, hostname_dirty, service_dirty, output_dirty, pad2
             # are the name of unpacked structure elements
             (version, pad, crc32, timestamp, rc, hostname_dirty, service_dirty, output_dirty, _) = \
-                struct.unpack(unpackFormat, data)
+                struct.unpack(unpack_format, data)
             hostname = hostname_dirty.split("\0", 1)[0]
             service = service_dirty.split("\0", 1)[0]
             output = output_dirty.split("\0", 1)[0]
-            logger.debug("[NSCA] Decoded NSCA packet: host/service: %s/%s, timestamp: %d, output: %s", hostname, service, timestamp, output[:32])
-            return (timestamp, rc, hostname, service, output)
+            logger.debug("[NSCA] Decoded NSCA packet: host/service: %s/%s, timestamp: %d, output: %s", hostname,
+                         service, timestamp, output[:32])
+            return timestamp, rc, hostname, service, output
         except Exception as e:
             logger.warning("[NSCA] Unable to decode NSCA packet: %s", str(e))
             logger.warning("[NSCA] Faulty NSCA packet content: %s", binascii.hexlify(data))
-            return (0, 0, '', '', '')
+            return 0, 0, '', '', ''
 
     def post_command(self, timestamp, rc, hostname, service, output):
-        '''
+        """
         Send a check result command to the arbiter
-        '''
+        """
         if not service:
-            extcmd = "[%lu] PROCESS_HOST_CHECK_RESULT;%s;%d;%s\n" % \
-                (timestamp, hostname, rc, output)
+            external_command = "[%lu] PROCESS_HOST_CHECK_RESULT;%s;%d;%s\n" % \
+                               (timestamp, hostname, rc, output)
         else:
-            extcmd = "[%lu] PROCESS_SERVICE_CHECK_RESULT;%s;%s;%d;%s\n" % \
-                (timestamp, hostname, service, rc, output)
+            external_command = "[%lu] PROCESS_SERVICE_CHECK_RESULT;%s;%s;%d;%s\n" % \
+                               (timestamp, hostname, service, rc, output)
 
-        logger.debug("[NSCA] external command sent: %s" % (extcmd))
-        e = ExternalCommand(extcmd)
+        logger.debug("[NSCA] external command sent: %s", external_command)
+        e = ExternalCommand(external_command)
         self.from_q.put(e)
 
-    def process_check_result(self, databuffer, IV):
+    def process_check_result(self, data_buffer, initial_vector):
         # 208 is the size of fixed received data ... NSCA packets are 208+512 (720) or 208+4096 (4304)
-        if not databuffer:
+        if not data_buffer:
             logger.warning("[NSCA] Received an empty NSCA packet")
             return
 
-        logger.debug("[NSCA] Received NSCA packet: %s", binascii.hexlify(databuffer))
+        logger.debug("[NSCA] Received NSCA packet: %s", binascii.hexlify(data_buffer))
 
-        payload_length = len(databuffer) - 208
+        payload_length = len(data_buffer) - 208
         if payload_length != 512 and payload_length != 4096:
             logger.warning("[NSCA] Received packet with unusual payload length: %d.", payload_length)
-            
+
         if self.payload_length != -1 and payload_length != self.payload_length:
             logger.warning("[NSCA] Dropping packet with incorrect payload length.")
             return
-            
-        (timestamp, rc, hostname, service, output) = self.read_check_result(databuffer, IV, payload_length)
+
+        (timestamp, rc, hostname, service, output) = self.read_check_result(data_buffer, initial_vector, payload_length)
         if self.host_prefix and service.startswith(self.host_prefix):
             service = None
         current_time = time.time()
@@ -221,9 +225,8 @@ class NSCA_arbiter(BaseModule):
         if timestamp > current_time and self.check_future_packet:
             logger.info("[NSCA] Dropping packet with future timestamp.")
         elif check_result_age > self.max_packet_age:
-            logger.info(
-                "[NSCA] Dropping packet with stale timestamp - packet was %s seconds old. Timestamp: %s for %s/%s" % \
-                (check_result_age, timestamp, hostname, service))
+            msg = "[NSCA] Dropping packet with stale timestamp - packet was %s seconds old. Timestamp: %s for %s/%s"
+            logger.info(msg, check_result_age, timestamp, hostname, service)
         else:
             self.post_command(timestamp, rc, hostname, service, output)
 
@@ -237,21 +240,21 @@ class NSCA_arbiter(BaseModule):
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.host, self.port))
         server.listen(self.backlog)
-        input = [server]
-        databuffer = {}
-        IVs = {}
+        socket_set = [server]
+        data_buffer = {}
+        initial_vectors = {}
 
         while not self.interrupted:
             # outputready and exceptready unused
-            inputready, _, _ = select.select(input, [], [], 1)
-            for s in inputready:
+            input_ready, _, _ = select.select(socket_set, [], [], 1)
+            for s in input_ready:
                 if s == server:
                     # handle the server socket
                     try:
                         client, _ = server.accept()
                         iv = self.send_init_packet(client)
-                        IVs[client] = iv
-                        input.append(client)
+                        initial_vectors[client] = iv
+                        socket_set.append(client)
                     except Exception as e:
                         logger.warning("[NSCA] Exception on socket connecting: %s", str(e))
                         continue
@@ -259,21 +262,21 @@ class NSCA_arbiter(BaseModule):
                     # handle all other sockets
                     try:
                         data = s.recv(self.buffer_length)
-                        if s in databuffer:
-                            databuffer[s] += data
+                        if s in data_buffer:
+                            data_buffer[s] += data
                         else:
-                            databuffer[s] = data
+                            data_buffer[s] = data
                     except Exception as e:
                         logger.warning("[NSCA] Exception on socket receiving: %s", str(e))
                         continue
-                        
+
                     if len(data) == 0:
-                        self.process_check_result(databuffer[s], IVs[s])
+                        self.process_check_result(data_buffer[s], initial_vectors[s])
                         try:
                             # Closed socket
-                            del databuffer[s]
-                            del IVs[s]
+                            del data_buffer[s]
+                            del initial_vectors[s]
                         except:
                             pass
                         s.close()
-                        input.remove(s)
+                        socket_set.remove(s)
