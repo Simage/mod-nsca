@@ -76,19 +76,20 @@ def get_instance(plugin):
         logger.warning("[NSCA] Setting password to dummy to avoid crash!")
         password = "dummy"
 
+    host_prefix = getattr(plugin,'host_prefix',None)
     max_packet_age = min(int(getattr(plugin, 'max_packet_age', '30')), 900)
     check_future_packet = bool(getattr(plugin, 'check_future_packet', 'False'))
 
     instance = NSCA_arbiter(plugin, host, port,
             buffer_length, payload_length, encryption_method, password, max_packet_age, check_future_packet,
-            backlog)
+            backlog, host_prefix=host_prefix)
     return instance
 
 
 class NSCA_arbiter(BaseModule):
     """Please Add a Docstring to describe the class here"""
 
-    def __init__(self, modconf, host, port, buffer_length, payload_length, encryption_method, password, max_packet_age, check_future_packet, backlog):
+    def __init__(self, modconf, host, port, buffer_length, payload_length, encryption_method, password, max_packet_age, check_future_packet, backlog,host_prefix=None):
         BaseModule.__init__(self, modconf)
         self.host = host
         self.port = port
@@ -99,7 +100,8 @@ class NSCA_arbiter(BaseModule):
         self.password = password
         self.rng = random.Random(password)
         self.max_packet_age = max_packet_age
-        self.check_future_packet = check_future_packet 
+        self.check_future_packet = check_future_packet
+        self.host_prefix = host_prefix
         logger.info("[NSCA] configuration, allowed hosts : '%s'(%s), buffer length: %s, payload length: %s, encryption: %s, max packet age: %s, check future packet: %s, backlog: %d", self.host, self.port, self.buffer_length, self.payload_length, self.encryption_method, self.max_packet_age, self.check_future_packet, self.backlog)
 
     def send_init_packet(self, sock):
@@ -212,6 +214,8 @@ class NSCA_arbiter(BaseModule):
             return
             
         (timestamp, rc, hostname, service, output) = self.read_check_result(databuffer, IV, payload_length)
+        if self.host_prefix and service.startswith(self.host_prefix):
+            service = None
         current_time = time.time()
         check_result_age = current_time - timestamp
         if timestamp > current_time and self.check_future_packet:
