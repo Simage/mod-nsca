@@ -103,7 +103,7 @@ class NSCAArbiter(BaseModule):
         self.check_future_packet = check_future_packet
         self.host_prefix = host_prefix
         msg = "[NSCA] configuration, allowed hosts : '%s'(%s), buffer length: %s, payload length: %s, encryption: %s,"
-        msg += " max packet age: %s, check future packet: %s, backlog: %d",
+        msg += " max packet age: %s, check future packet: %s, backlog: %d"
         logger.info(msg, self.host, self.port, self.buffer_length, self.payload_length, self.encryption_method,
                     self.max_packet_age, self.check_future_packet, self.backlog)
 
